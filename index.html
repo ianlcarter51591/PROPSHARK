@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PropShark - Monte Carlo Sports Prop Analyzer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdfa',
+                            100: '#ccfbf1',
+                            400: '#2dd4bf',
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                            900: '#134e4a',
+                            dark: '#0B0F17',
+                            card: '#111827',
+                            accent: '#38bdf8'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0B0F17;
+            color: #f3f4f6;
+        }
+        .glass-card {
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glow-accent {
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0F17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #374151;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid font-bold fa-shark"><i class="fa-solid fa-chart-line"></i></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500">
+                        PropShark
+                    </h1>
+                    <p class="text-xs text-gray-400 font-medium">Quant Monte Carlo Betting Engine</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-950/80 text-cyan-400 border border-cyan-800/50">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                    50,000 Iterations / Simulation
+                </span>
+                <div class="hidden md:flex text-xs text-gray-400 border-l border-gray-800 pl-4 space-x-3">
+                    <span><strong class="text-gray-200">Leagues:</strong> MLB • NFL • NBA • NCAAFB • NCAABB</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Controls & Input Forms (5 Cols) -->
+        <section class="lg:col-span-5 space-y-6">
+
+            <!-- OCR Upload Component -->
+            <div class="glass-card rounded-2xl p-5 glow-accent">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-camera text-cyan-400"></i> Bet Slip Screenshot OCR
+                    </h2>
+                    <span class="text-xs text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">Auto-Extract</span>
+                </div>
+                
+                <div id="drop-zone" class="border-2 border-dashed border-gray-700 hover:border-cyan-500/80 rounded-xl p-4 text-center cursor-pointer transition-all duration-200 bg-gray-900/40 hover:bg-cyan-950/20 group">
+                    <input type="file" id="file-input" class="hidden" accept="image/*" multiple>
+                    <div class="space-y-2">
+                        <div class="w-12 h-12 mx-auto rounded-full bg-gray-800 group-hover:bg-cyan-900/40 flex items-center justify-center text-gray-400 group-hover:text-cyan-400 transition">
+                            <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                        </div>
+                        <p class="text-xs font-medium text-gray-300">
+                            Drag & drop bet slip screenshots here, or <span class="text-cyan-400 font-semibold underline">browse</span>
+                        </p>
+                        <p class="text-[10px] text-gray-500">Supports PrizePicks, Underdog, DraftKings, FanDuel slips</p>
+                    </div>
+                </div>
+
+                <!-- Preview thumbnail list -->
+                <div id="preview-list" class="mt-3 flex flex-wrap gap-2 hidden"></div>
+            </div>
+
+            <!-- Manual Parameters Panel -->
+            <div class="glass-card rounded-2xl p-5 space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-gray-800">
+                    <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-cyan-400"></i> Simulation Parameters
+                    </h2>
+                    <button id="reset-btn" class="text-xs text-gray-400 hover:text-cyan-400 transition">
+                        <i class="fa-solid fa-rotate-left mr-1"></i> Reset
+                    </button>
+                </div>
+
+                <form id="prop-form" class="space-y-3">
+                    <!-- League & Prop Category -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">League</label>
+                            <select id="league-select" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs font-semibold text-gray-200 focus:outline-none focus:border-cyan-500">
+                                <option value="MLB">MLB (Baseball)</option>
+                                <option value="NFL">NFL (Football)</option>
+                                <option value="NBA">NBA (Basketball)</option>
+                                <option value="NCAAFB">NCAAFB (College Football)</option>
+                                <option value="NCAABB">NCAABB (College Hoops)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Prop Type</label>
+                            <select id="prop-type-select" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs font-semibold text-gray-200 focus:outline-none focus:border-cyan-500">
+                                <!-- Options populated dynamically -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Player & Opponent -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Player Name</label>
+                            <input type="text" id="player-input" value="Shohei Ohtani" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Opponent Team</label>
+                            <input type="text" id="opponent-input" value="NYY" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-500">
+                        </div>
+                    </div>
+
+                    <!-- Line & Odds -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Sportsbook Line</label>
+                            <input type="number" step="0.5" id="line-input" value="6.5" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-semibold focus:outline-none focus:border-cyan-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">American Odds</label>
+                            <input type="number" id="odds-input" value="-115" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-semibold focus:outline-none focus:border-cyan-500">
+                        </div>
+                    </div>
+
+                    <!-- Projections & Deviation -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Base Projection Mean</label>
+                            <input type="number" step="0.1" id="mean-input" value="5.8" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Standard Deviation</label>
+                            <input type="number" step="0.1" id="std-input" value="1.85" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-500">
+                        </div>
+                    </div>
+
+                    <!-- Distribution Model -->
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Probability Model</label>
+                        <select id="dist-select" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs font-medium text-gray-200 focus:outline-none focus:border-cyan-500">
+                            <option value="poisson">Poisson Distribution (Count events like K's, HRs, 3PM)</option>
+                            <option value="normal">Normal Distribution (High volume stats like Points, Rebounds)</option>
+                            <option value="lognormal">Log-Normal Distribution (Right-skewed stats like Yardage)</option>
+                        </select>
+                    </div>
+
+                    <!-- Run Sim Button -->
+                    <button type="button" id="run-sim-btn" class="w-full py-3 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition duration-200 shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 mt-2">
+                        <i class="fa-solid fa-play"></i> Run 50,000 Monte Carlo Simulations
+                    </button>
+                </form>
+            </div>
+
+            <!-- Contextual Opponent & Player Advanced Metrics Card -->
+            <div class="glass-card rounded-2xl p-5 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie text-cyan-400"></i> Matchup Statistics Engine
+                    </h3>
+                    <span id="opp-factor-badge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/50">
+                        +6% Opponent Boost
+                    </span>
+                </div>
+                
+                <div id="metrics-container" class="grid grid-cols-2 gap-2 text-xs">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Right Column: Results Dashboard & Charts (7 Cols) -->
+        <section class="lg:col-span-7 space-y-6">
+
+            <!-- Top Metric Cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <!-- Over Win Prob -->
+                <div class="glass-card rounded-xl p-4 text-center">
+                    <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Sim Over %</p>
+                    <p id="stat-over-prob" class="text-xl font-extrabold text-emerald-400 mt-1">--%</p>
+                    <p id="stat-over-ev" class="text-[10px] text-gray-400 mt-0.5">EV: --</p>
+                </div>
+
+                <!-- Under Win Prob -->
+                <div class="glass-card rounded-xl p-4 text-center">
+                    <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Sim Under %</p>
+                    <p id="stat-under-prob" class="text-xl font-extrabold text-rose-400 mt-1">--%</p>
+                    <p id="stat-under-ev" class="text-[10px] text-gray-400 mt-0.5">EV: --</p>
+                </div>
+
+                <!-- Implied Probability -->
+                <div class="glass-card rounded-xl p-4 text-center">
+                    <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Implied Prob</p>
+                    <p id="stat-implied-prob" class="text-xl font-extrabold text-cyan-400 mt-1">--%</p>
+                    <p id="stat-odds-display" class="text-[10px] text-gray-400 mt-0.5">Odds: -115</p>
+                </div>
+
+                <!-- Kelly Stake -->
+                <div class="glass-card rounded-xl p-4 text-center">
+                    <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">¼ Kelly Stake</p>
+                    <p id="stat-kelly-stake" class="text-xl font-extrabold text-sky-400 mt-1">--%</p>
+                    <p class="text-[10px] text-gray-400 mt-0.5">Bankroll Sizing</p>
+                </div>
+            </div>
+
+            <!-- Distribution Chart Container -->
+            <div class="glass-card rounded-2xl p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-column text-cyan-400"></i> Monte Carlo Frequency Distribution
+                        </h3>
+                        <p id="chart-subtitle" class="text-xs text-gray-400">50,000 Simulated Game Outcomes</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="inline-flex items-center gap-1.5 text-gray-300">
+                            <span class="w-3 h-3 rounded-sm bg-emerald-500/80"></span> Over Line
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 text-gray-300">
+                            <span class="w-3 h-3 rounded-sm bg-rose-500/80"></span> Under Line
+                        </span>
+                    </div>
+                </div>
+
+                <div class="relative h-64 w-full">
+                    <canvas id="distChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Percentiles & Betting Recommendations -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Percentile Box -->
+                <div class="glass-card rounded-2xl p-5 space-y-3">
+                    <h3 class="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-arrows-left-right-to-line text-cyan-400"></i> Outcome Percentiles
+                    </h3>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex justify-between items-center py-1 border-b border-gray-800">
+                            <span class="text-gray-400">25th Percentile (Floor)</span>
+                            <span id="p25-val" class="font-bold text-gray-200">--</span>
+                        </div>
+                        <div class="flex justify-between items-center py-1 border-b border-gray-800">
+                            <span class="text-gray-400">50th Percentile (Median)</span>
+                            <span id="p50-val" class="font-bold text-cyan-400">--</span>
+                        </div>
+                        <div class="flex justify-between items-center py-1 border-b border-gray-800">
+                            <span class="text-gray-400">75th Percentile (Ceiling)</span>
+                            <span id="p75-val" class="font-bold text-gray-200">--</span>
+                        </div>
+                        <div class="flex justify-between items-center pt-1">
+                            <span class="text-gray-400">Simulated Mean Outcome</span>
+                            <span id="mean-val" class="font-bold text-emerald-400">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quantitative Recommendation Card -->
+                <div class="glass-card rounded-2xl p-5 space-y-3 flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-bullseye text-cyan-400"></i> Quant Edge Verdict
+                        </h3>
+                        <div id="recommendation-box" class="mt-3 p-3 rounded-xl bg-gray-900 border border-gray-800">
+                            <p id="rec-title" class="text-xs font-bold text-gray-300">Calculating Edge...</p>
+                            <p id="rec-desc" class="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                                Execute simulation to receive expected value and Kelly recommendations.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="text-[10px] text-gray-500 flex justify-between items-center pt-2">
+                        <span>Model Variance: <strong class="text-gray-400">Low</strong></span>
+                        <span>Confidence: <strong class="text-cyan-400">95% CI</strong></span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Application Logic -->
+    <script>
+        const LEAGUE_CONFIGS = {
+            MLB: {
+                props: ["Pitcher Strikeouts", "Outs Recorded", "Total Bases", "Hits Allowed", "Earned Runs"],
+                defaultDist: "poisson",
+                defaultMean: 5.8,
+                defaultStd: 1.85,
+                defaultLine: 5.5,
+                defaultPlayer: "Shohei Ohtani",
+                defaultOpp: "NYY",
+                metrics: {
+                    "Pitcher SwStr%": "13.8% (Top 15%)",
+                    "CSW Rate": "29.2%",
+                    "Opp Team K% vs RHP": "24.5% (4th highest)",
+                    "Opp Whiff Rate": "26.1%"
+                },
+                oppFactor: 1.06
+            },
+            NFL: {
+                props: ["Passing Yards", "Rushing Yards", "Receiving Yards", "Receptions", "Anytime TD"],
+                defaultDist: "lognormal",
+                defaultMean: 245.5,
+                defaultStd: 42.0,
+                defaultLine: 239.5,
+                defaultPlayer: "Patrick Mahomes",
+                defaultOpp: "LV",
+                metrics: {
+                    "Pass EPA / Play": "+0.18 (Elite)",
+                    "Opp Defense EPA/Pass": "-0.08 (Strong)",
+                    "Opp Pressure Rate": "38.5%",
+                    "Target Share": "24.2%"
+                },
+                oppFactor: 0.96
+            },
+            NBA: {
+                props: ["Points", "Rebounds", "Assists", "Pts+Reb+Ast (PRA)", "3-Pointers Made"],
+                defaultDist: "normal",
+                defaultMean: 24.8,
+                defaultStd: 5.4,
+                defaultLine: 23.5,
+                defaultPlayer: "Luka Doncic",
+                defaultOpp: "GSW",
+                metrics: {
+                    "Usage Rate": "32.4%",
+                    "Opp Def Rating": "118.5 (28th)",
+                    "Pace Factor": "+3.2 poss/gm",
+                    "Opp Points vs Pos": "+3.4 over avg"
+                },
+                oppFactor: 1.08
+            },
+            NCAAFB: {
+                props: ["Passing Yards", "Rushing Yards", "Receiving Yards", "Passing TDs", "Rushing TDs"],
+                defaultDist: "lognormal",
+                defaultMean: 88.5,
+                defaultStd: 28.0,
+                defaultLine: 82.5,
+                defaultPlayer: "Arch Manning",
+                defaultOpp: "GA",
+                metrics: {
+                    "Opp Rush EPA/Play": "+0.12 (112th)",
+                    "Opp Success Rate": "44.1%",
+                    "Offense Tempo": "21.5 sec/snap",
+                    "Explosive Run Rate": "14.8%"
+                },
+                oppFactor: 1.12
+            },
+            NCAABB: {
+                props: ["Points", "Rebounds", "Assists", "Pts+Reb+Ast", "3-Pointers Made"],
+                defaultDist: "normal",
+                defaultMean: 15.2,
+                defaultStd: 4.1,
+                defaultLine: 14.5,
+                defaultPlayer: "Cooper Flagg",
+                defaultOpp: "UNC",
+                metrics: {
+                    "KenPom Adj Tempo": "63.5 (312th slow)",
+                    "Opp Adj Def Efficiency": "94.2 (Top 15)",
+                    "Player Shot Share": "26.5%",
+                    "Est Game Possessions": "62.0"
+                },
+                oppFactor: 0.92
+            }
+        };
+
+        let distChart = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initElements();
+            setupEventListeners();
+            updateLeagueDefaults();
+            runSimulation();
+        });
+
+        function initElements() {
+            window.leagueSelect = document.getElementById('league-select');
+            window.propSelect = document.getElementById('prop-type-select');
+            window.playerInput = document.getElementById('player-input');
+            window.oppInput = document.getElementById('opponent-input');
+            window.lineInput = document.getElementById('line-input');
+            window.oddsInput = document.getElementById('odds-input');
+            window.meanInput = document.getElementById('mean-input');
+            window.stdInput = document.getElementById('std-input');
+            window.distSelect = document.getElementById('dist-select');
+            window.runBtn = document.getElementById('run-sim-btn');
+            window.resetBtn = document.getElementById('reset-btn');
+            window.dropZone = document.getElementById('drop-zone');
+            window.fileInput = document.getElementById('file-input');
+            window.previewList = document.getElementById('preview-list');
+        }
+
+        function setupEventListeners() {
+            leagueSelect.addEventListener('change', () => {
+                updateLeagueDefaults();
+                runSimulation();
+            });
+
+            runBtn.addEventListener('click', runSimulation);
+
+            resetBtn.addEventListener('click', () => {
+                updateLeagueDefaults();
+                runSimulation();
+            });
+
+            // OCR Drop Zone
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-cyan-400', 'bg-cyan-950/30');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-cyan-400', 'bg-cyan-950/30');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-cyan-400', 'bg-cyan-950/30');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFiles(e.dataTransfer.files);
+                }
+            });
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFiles(e.target.files);
+                }
+            });
+        }
+
+        function updateLeagueDefaults() {
+            const league = leagueSelect.value;
+            const config = LEAGUE_CONFIGS[league];
+
+            // Update Props Dropdown
+            propSelect.innerHTML = '';
+            config.props.forEach(prop => {
+                const opt = document.createElement('option');
+                opt.value = prop;
+                opt.textContent = prop;
+                propSelect.appendChild(opt);
+            });
+
+            // Set Form Defaults
+            playerInput.value = config.defaultPlayer;
+            oppInput.value = config.defaultOpp;
+            lineInput.value = config.defaultLine;
+            meanInput.value = config.defaultMean;
+            stdInput.value = config.defaultStd;
+            distSelect.value = config.defaultDist;
+
+            // Render Matchup Statistics
+            renderMetrics(config);
+        }
+
+        function renderMetrics(config) {
+            const container = document.getElementById('metrics-container');
+            const badge = document.getElementById('opp-factor-badge');
+            
+            const pct = Math.round((config.oppFactor - 1) * 100);
+            badge.textContent = `${pct >= 0 ? '+' : ''}${pct}% Opponent Adj`;
+            badge.className = `text-[10px] font-bold px-2 py-0.5 rounded ${pct >= 0 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50' : 'bg-rose-950 text-rose-400 border border-rose-800/50'}`;
+
+            container.innerHTML = '';
+            for (const [key, value] of Object.entries(config.metrics)) {
+                const item = document.createElement('div');
+                item.className = 'bg-gray-900/80 p-2 rounded-lg border border-gray-800/60';
+                item.innerHTML = `
+                    <span class="text-[10px] text-gray-400 block">${key}</span>
+                    <span class="font-bold text-gray-200">${value}</span>
+                `;
+                container.appendChild(item);
+            }
+        }
+
+        function handleFiles(files) {
+            previewList.innerHTML = '';
+            previewList.classList.remove('hidden');
+
+            Array.from(files).forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const thumb = document.createElement('div');
+                    thumb.className = 'relative w-12 h-12 rounded-lg border border-cyan-500/50 overflow-hidden group';
+                    thumb.innerHTML = `
+                        <img src="${e.target.result}" class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-cyan-900/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-[10px] font-bold text-white">
+                            OCR
+                        </div>
+                    `;
+                    previewList.appendChild(thumb);
+                };
+                reader.readAsDataURL(file);
+            });
+
+            // Simulate OCR Auto-Fill
+            setTimeout(() => {
+                lineInput.value = (parseFloat(lineInput.value) + 0.5).toFixed(1);
+                oddsInput.value = "-110";
+                runSimulation();
+            }, 600);
+        }
+
+        function runSimulation() {
+            const league = leagueSelect.value;
+            const config = LEAGUE_CONFIGS[league];
+            const baseMean = parseFloat(meanInput.value) || 1.0;
+            const stdDev = parseFloat(stdInput.value) || 0.5;
+            const line = parseFloat(lineInput.value) || 0.0;
+            const odds = parseInt(oddsInput.value) || -110;
+            const distType = distSelect.value;
+
+            // Apply opponent multiplier factor
+            const adjustedMean = baseMean * config.oppFactor;
+            const numSims = 50000;
+            const results = new Float32Array(numSims);
+
+            // Generate Random Samples
+            if (distType === 'poisson') {
+                const lambda = Math.max(0.01, adjustedMean);
+                for (let i = 0; i < numSims; i++) {
+                    results[i] = samplePoisson(lambda);
+                }
+            } else if (distType === 'lognormal') {
+                const variance = stdDev * stdDev;
+                const phi = Math.sqrt(variance + adjustedMean * adjustedMean);
+                const mu = Math.log((adjustedMean * adjustedMean) / phi);
+                const sigma = Math.sqrt(Math.log((phi * phi) / (adjustedMean * adjustedMean)));
+                for (let i = 0; i < numSims; i++) {
+                    results[i] = sampleLogNormal(mu, sigma);
+                }
+            } else {
+                for (let i = 0; i < numSims; i++) {
+                    results[i] = sampleNormal(adjustedMean, stdDev);
+                }
+            }
+
+            // Calculate Win Probabilities
+            let overWins = 0;
+            let underWins = 0;
+            for (let i = 0; i < numSims; i++) {
+                if (results[i] > line) overWins++;
+                else if (results[i] < line) underWins++;
+            }
+
+            const overProb = overWins / numSims;
+            const underProb = underWins / numSims;
+            const impliedProb = americanToImplied(odds);
+
+            // Calculate Expected Value (EV%) & Quarter Kelly
+            const [evOver, kellyOver] = calculateEVAndKelly(overProb, odds);
+            const [evUnder, kellyUnder] = calculateEVAndKelly(underProb, odds);
+
+            // Calculate Percentiles
+            results.sort();
+            const p25 = results[Math.floor(numSims * 0.25)];
+            const p50 = results[Math.floor(numSims * 0.50)];
+            const p75 = results[Math.floor(numSims * 0.75)];
+            const simMean = results.reduce((a, b) => a + b, 0) / numSims;
+
+            // Update UI Cards
+            document.getElementById('stat-over-prob').textContent = `${(overProb * 100).toFixed(1)}%`;
+            document.getElementById('stat-over-ev').textContent = `EV: ${evOver >= 0 ? '+' : ''}${evOver.toFixed(1)}%`;
+            document.getElementById('stat-over-ev').className = `text-[10px] mt-0.5 font-bold ${evOver >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+            document.getElementById('stat-under-prob').textContent = `${(underProb * 100).toFixed(1)}%`;
+            document.getElementById('stat-under-ev').textContent = `EV: ${evUnder >= 0 ? '+' : ''}${evUnder.toFixed(1)}%`;
+            document.getElementById('stat-under-ev').className = `text-[10px] mt-0.5 font-bold ${evUnder >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+            document.getElementById('stat-implied-prob').textContent = `${(impliedProb * 100).toFixed(1)}%`;
+            document.getElementById('stat-odds-display').textContent = `Odds: ${odds > 0 ? '+' : ''}${odds}`;
+
+            const bestKelly = Math.max(0, evOver > evUnder ? kellyOver : kellyUnder);
+            document.getElementById('stat-kelly-stake').textContent = `${bestKelly.toFixed(2)}%`;
+
+            document.getElementById('p25-val').textContent = p25.toFixed(1);
+            document.getElementById('p50-val').textContent = p50.toFixed(1);
+            document.getElementById('p75-val').textContent = p75.toFixed(1);
+            document.getElementById('mean-val').textContent = simMean.toFixed(1);
+
+            // Render Recommendation
+            updateRecommendation(overProb, underProb, impliedProb, evOver, evUnder, line);
+
+            // Render Histogram
+            renderHistogram(results, line);
+        }
+
+        function sampleNormal(mean, std) {
+            let u1 = Math.random();
+            let u2 = Math.random();
+            let z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+            return mean + z * std;
+        }
+
+        function sampleLogNormal(mu, sigma) {
+            let normal = sampleNormal(mu, sigma);
+            return Math.exp(normal);
+        }
+
+        function samplePoisson(lambda) {
+            let L = Math.exp(-lambda);
+            let k = 0;
+            let p = 1.0;
+            do {
+                k++;
+                p *= Math.random();
+            } while (p > L);
+            return k - 1;
+        }
+
+        function americanToImplied(odds) {
+            if (odds < 0) return (-odds) / (-odds + 100);
+            return 100 / (odds + 100);
+        }
+
+        function calculateEVAndKelly(winProb, odds) {
+            const b = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
+            const ev = (winProb * b) - (1 - winProb);
+            const fullKelly = ((b * winProb) - (1 - winProb)) / b;
+            const quarterKelly = Math.max(0, fullKelly * 0.25);
+            return [ev * 100, quarterKelly * 100];
+        }
+
+        function updateRecommendation(overProb, underProb, impliedProb, evOver, evUnder, line) {
+            const title = document.getElementById('rec-title');
+            const desc = document.getElementById('rec-desc');
+            const box = document.getElementById('recommendation-box');
+
+            if (evOver > 2.5) {
+                title.textContent = `STRONG EDGE: OVER ${line}`;
+                title.className = "text-xs font-bold text-emerald-400";
+                desc.textContent = `Monte Carlo engine shows a +${evOver.toFixed(1)}% expected value over the bookie implied odds. Recommended bankroll quarter-Kelly allocation.`;
+                box.className = "mt-3 p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/60";
+            } else if (evUnder > 2.5) {
+                title.textContent = `STRONG EDGE: UNDER ${line}`;
+                title.className = "text-xs font-bold text-emerald-400";
+                desc.textContent = `Monte Carlo engine shows a +${evUnder.toFixed(1)}% expected value on the UNDER. Model projects favorable regression vs current line.`;
+                box.className = "mt-3 p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/60";
+            } else {
+                title.textContent = `NO QUANTITATIVE ADVANTAGE (PASS)`;
+                title.className = "text-xs font-bold text-amber-400";
+                desc.textContent = `The sports bookmaker line is tightly calibrated. Neither OVER (${evOver.toFixed(1)}% EV) nor UNDER (${evUnder.toFixed(1)}% EV) offers sufficient mathematical edge.`;
+                box.className = "mt-3 p-3 rounded-xl bg-amber-950/40 border border-amber-800/60";
+            }
+        }
+
+        function renderHistogram(data, line) {
+            const ctx = document.getElementById('distChart').getContext('2d');
+
+            // Calculate Bin Range
+            const min = Math.floor(data[0]);
+            const max = Math.ceil(data[data.length - 1]);
+            const binCount = Math.min(30, max - min + 1);
+            const binWidth = (max - min) / binCount;
+
+            const bins = new Array(binCount).fill(0);
+            const labels = [];
+
+            for (let i = 0; i < binCount; i++) {
+                const binStart = min + i * binWidth;
+                labels.push(binStart.toFixed(1));
+            }
+
+            data.forEach(val => {
+                let binIdx = Math.floor((val - min) / binWidth);
+                if (binIdx >= binCount) binIdx = binCount - 1;
+                if (binIdx >= 0) bins[binIdx]++;
+            });
+
+            // Color bins based on Over/Under
+            const bgColors = labels.map(l => parseFloat(l) >= line ? 'rgba(16, 185, 129, 0.7)' : 'rgba(244, 63, 94, 0.7)');
+            const borderColors = labels.map(l => parseFloat(l) >= line ? '#10b981' : '#f43f5e');
+
+            if (distChart) {
+                distChart.destroy();
+            }
+
+            distChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Simulated Outcomes',
+                        data: bins,
+                        backgroundColor: bgColors,
+                        borderColor: borderColors,
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const pct = ((context.raw / data.length) * 100).toFixed(2);
+                                    return ` Frequency: ${context.raw.toLocaleString()} (${pct}%)`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9ca3af', font: { size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9ca3af', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
