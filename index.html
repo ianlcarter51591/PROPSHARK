@@ -191,14 +191,18 @@
                     </div>
 
                     <!-- Line & Odds -->
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-3 gap-3">
                         <div>
                             <label class="block text-xs font-medium text-gray-400 mb-1">Sportsbook Line</label>
                             <input type="number" step="0.5" id="line-input" value="6.5" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-semibold focus:outline-none focus:border-cyan-500">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-gray-400 mb-1">American Odds</label>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Over Odds</label>
                             <input type="number" id="odds-input" value="-115" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-semibold focus:outline-none focus:border-cyan-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Under Odds</label>
+                            <input type="number" id="under-odds-input" value="-115" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-semibold focus:outline-none focus:border-cyan-500">
                         </div>
                     </div>
 
@@ -270,9 +274,9 @@
 
                 <!-- Implied Probability -->
                 <div class="glass-card rounded-xl p-4 text-center">
-                    <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Implied Prob</p>
+                    <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Over Implied Prob</p>
                     <p id="stat-implied-prob" class="text-xl font-extrabold text-cyan-400 mt-1">--%</p>
-                    <p id="stat-odds-display" class="text-[10px] text-gray-400 mt-0.5">Odds: -115</p>
+                    <p id="stat-odds-display" class="text-[10px] text-gray-400 mt-0.5 leading-snug">O -115 / U -115</p>
                 </div>
 
                 <!-- Kelly Stake -->
@@ -378,7 +382,7 @@
                 oppFactor: 1.06
             },
             NFL: {
-                props: ["Passing Yards", "Rushing Yards", "Receiving Yards", "Receptions", "Anytime TD"],
+                props: ["Passing Yards", "Passing TDs", "Rushing Yards", "Receiving Yards", "Receptions", "Anytime TD"],
                 defaultDist: "lognormal",
                 defaultMean: 245.5,
                 defaultStd: 42.0,
@@ -459,6 +463,7 @@
             window.oppInput = document.getElementById('opponent-input');
             window.lineInput = document.getElementById('line-input');
             window.oddsInput = document.getElementById('odds-input');
+            window.underOddsInput = document.getElementById('under-odds-input');
             window.meanInput = document.getElementById('mean-input');
             window.stdInput = document.getElementById('std-input');
             window.distSelect = document.getElementById('dist-select');
@@ -476,6 +481,7 @@
             });
 
             runBtn.addEventListener('click', runSimulation);
+            [oddsInput, underOddsInput].forEach(el => el.addEventListener('change', runSimulation));
 
             resetBtn.addEventListener('click', () => {
                 updateLeagueDefaults();
@@ -581,8 +587,8 @@
             { re: /rush(?:ing)?\s*(?:yds|yards)/i, labels: { NFL: 'Rushing Yards', NCAAFB: 'Rushing Yards' } },
             { re: /rec(?:eiving)?\s*(?:yds|yards)/i, labels: { NFL: 'Receiving Yards', NCAAFB: 'Receiving Yards' } },
             { re: /anytime\s+(?:td|touchdown)/i, labels: { NFL: 'Anytime TD' } },
-            { re: /pass(?:ing)?\s*(?:tds|touchdowns)/i, labels: { NCAAFB: 'Passing TDs' } },
-            { re: /rush(?:ing)?\s*(?:tds|touchdowns)/i, labels: { NCAAFB: 'Rushing TDs' } },
+            { re: /pass(?:ing)?\s*(?:t\.?d\.?'?s?|touchdowns?)\b/i, labels: { NFL: 'Passing TDs', NCAAFB: 'Passing TDs' } },
+            { re: /rush(?:ing)?\s*(?:t\.?d\.?'?s?|touchdowns?)\b/i, labels: { NCAAFB: 'Rushing TDs' } },
             { re: /receptions?|\brecs\b/i, labels: { NFL: 'Receptions' } },
             { re: /\bpoints\b|\bpts\b/i, labels: { NBA: 'Points', NCAABB: 'Points' } },
             { re: /rebounds?|\brebs\b/i, labels: { NBA: 'Rebounds', NCAABB: 'Rebounds' } },
@@ -615,7 +621,7 @@
         /** Normalize raw OCR text into trimmed, non-empty lines (unicode minus -> '-'). */
         function ocrLines(text) {
             return text
-                .replace(/[\u2212\u2013\u2014]/g, '-')
+                .replace(/[\u2010-\u2015\u2212]/g, '-')
                 .split(/\r?\n/)
                 .map(s => s.replace(/[|_~]/g, ' ').replace(/\s+/g, ' ').trim())
                 .filter(Boolean);
@@ -672,10 +678,58 @@
             return null;
         }
 
+        /** Convert digits that follow an O/U/Over/Under marker into a line value (OCR often drops the decimal point). */
+        function ocrSideValue(rawDigits) {
+            const t = rawDigits.replace(',', '.');
+            if (t.includes('.')) {
+                const [i, d] = t.split('.');
+                if (!i || i.length > 3) return null;
+                return { v: parseFloat(`${i}.${(d || '0')[0]}`), w: 2 };          // 18.56 -> 18.5
+            }
+            if (t.length === 3 && (t[2] === '5' || t[2] === '0')) return { v: parseInt(t, 10) / 10, w: 2 }; // 185 -> 18.5
+            if (t.length <= 2) return { v: parseInt(t, 10), w: 0.5 };            // weak: could be a clipped read
+            return null;
+        }
+
+        /** Vote across every "O 18.5" / "U185" / "Over 18.5" token; .5 lines get a prior. Returns null if no consensus. */
+        function ocrFindSideLine(lines) {
+            const re = /(?:^|[^A-Za-z0-9])(?:over|under|more|less|higher|lower|[ouOU0Q])\s?(\d{1,3}(?:[.,]\d{1,2})?)(?![\dA-Za-z])/gi;
+            const votes = new Map();
+            lines.forEach(l => {
+                re.lastIndex = 0;
+                let m;
+                while ((m = re.exec(l)) !== null) {
+                    const r = ocrSideValue(m[1]);
+                    if (!r || !(r.v >= 0.5 && r.v <= 600)) continue;
+                    const key = r.v.toFixed(1);
+                    votes.set(key, (votes.get(key) || 0) + r.w);
+                }
+            });
+            // "U18s" / "O18S": a trailing s/S is a misread 5
+            const sRe = /(?:^|[^A-Za-z0-9])[ouOU0Q]\s?(\d{2})[sS](?![A-Za-z0-9])/g;
+            lines.forEach(l => {
+                sRe.lastIndex = 0;
+                let m;
+                while ((m = sRe.exec(l)) !== null) {
+                    const key = `${m[1]}.5`;
+                    votes.set(key, (votes.get(key) || 0) + 2);
+                }
+            });
+            let best = null;
+            votes.forEach((w, key) => {
+                const v = parseFloat(key);
+                const score = w + (Math.abs(v % 1 - 0.5) < 1e-9 ? 1 : 0);
+                if (!best || score > best.score) best = { v, score };
+            });
+            return best && best.score >= 2 ? best.v : null;
+        }
+
         /** Score every plausible number; the line is the one sitting next to the prop label / More-Less buttons. */
         function ocrFindLine(lines, propIdx) {
+            const sideLine = ocrFindSideLine(lines);
+            if (sideLine != null) return sideLine;
             const sideRe = /\b(?:over|under|more|less|higher|lower|o\/u|[ou])\b/i;
-            const penaltyRe = /\b(?:entry|payout|win|flex|power|stake|wager|risk)\b|\d+\s?x\b|\$/i;
+            const penaltyRe = /\b(?:entry|payout|win|flex|power|stake|wager|risk|current|live)\b|\d+\s?x\b|\$/i;
             const numRe = /(?<![\d.:+\-$\/])(\d{1,3}(?:[.,]\d)?)(?![\d:%\/])/g;
             let best = null;
             lines.forEach((l, i) => {
@@ -697,19 +751,31 @@
             return best && best.score >= 2 ? best.value : null;
         }
 
-        /** American odds like -115 / +120 (|odds| >= 100). Returns first price plus count found. */
+        /** American odds (|odds| >= 100) in reading order: first = Over price, second = Under price. */
         function ocrFindOdds(lines) {
             const re = /(?<![\d.])([+\-])\s?(\d{3,4})(?![\d.%])/g;
             const found = [];
-            lines.forEach(l => {
+            const seen = new Set();
+            lines.forEach((l, i) => {
                 re.lastIndex = 0;
                 let m;
                 while ((m = re.exec(l)) !== null) {
                     const v = parseInt(m[2], 10) * (m[1] === '-' ? -1 : 1);
-                    if (Math.abs(v) >= 100) found.push(v);
+                    if (Math.abs(v) >= 100 && !seen.has(v)) { seen.add(v); found.push({ v, i }); }
                 }
             });
-            return { odds: found.length ? found[0] : null, count: found.length };
+            // OCR frequently drops the minus glyph (U+2212): a lone "+180" followed by a bare "250" means -250
+            if (found.length === 1 && found[0].v > 0) {
+                for (let k = Math.max(0, found[0].i - 3); k <= Math.min(lines.length - 1, found[0].i + 3); k++) {
+                    const m = /^(\d{3})$/.exec(lines[k]);
+                    if (m && k !== found[0].i && parseInt(m[1], 10) >= 100) { found.push({ v: -parseInt(m[1], 10), i: k }); break; }
+                }
+            }
+            return {
+                odds: found.length ? found[0].v : null,
+                under: found.length > 1 ? found[1].v : null,
+                count: found.length
+            };
         }
 
         /** Full parse of OCR text into form fields (null where not found). */
@@ -726,13 +792,25 @@
                 league = ocrInferLeague(joined, candidates, currentLeague);
                 prop = propHit.entry.labels[league];
             }
-            const { odds, count } = ocrFindOdds(lines);
+            const line = ocrFindLine(lines, propIdx);
+
+            // MLB sanity check: lines >= 12 are pitcher outs, never strikeouts. Flag it so the UI can say so.
+            let propNote = null;
+            const mlbContext = league ? league === 'MLB' : currentLeague === 'MLB';
+            if (mlbContext && line != null && line >= 12) {
+                if (!prop) { prop = 'Outs Recorded'; league = 'MLB'; propNote = 'inferred'; }
+                else if (prop === 'Pitcher Strikeouts') { prop = 'Outs Recorded'; propNote = 'adjusted'; }
+            }
+
+            const { odds, under, count } = ocrFindOdds(lines);
             return {
                 player: ocrFindPlayer(lines, propIdx),
                 prop,
+                propNote,
                 league,
-                line: ocrFindLine(lines, propIdx),
+                line,
                 odds,
+                underOdds: under,
                 oddsCount: count,
                 opp: ocrFindOpponent(joined)
             };
@@ -742,7 +820,7 @@
         async function preprocessImage(file) {
             const bmp = await createImageBitmap(file);
             const longest = Math.max(bmp.width, bmp.height);
-            const scale = longest < 1600 ? 2 : (longest > 3000 ? 3000 / longest : 1);
+            const scale = longest < 1600 ? Math.min(4, 2400 / longest) : (longest > 3000 ? 3000 / longest : 1);
             const canvas = document.createElement('canvas');
             canvas.width = Math.round(bmp.width * scale);
             canvas.height = Math.round(bmp.height * scale);
@@ -830,18 +908,13 @@
             await worker.setParameters({ tessedit_pageseg_mode: '11' }); // sparse text: best for card-style UIs
             const r1 = await worker.recognize(canvas);
             let raw = r1.data.text;
-            const ex = parseSlipText(raw, currentLeague);
+            let ex = parseSlipText(raw, currentLeague);
 
-            if (!ex.player || !ex.line || !ex.prop) {
-                await worker.setParameters({ tessedit_pageseg_mode: '6' }); // single block fallback
+            if (!ex.player || ex.line == null || ex.odds == null) {
+                await worker.setParameters({ tessedit_pageseg_mode: '6' }); // single-block pass reads table rows differently
                 const r2 = await worker.recognize(canvas);
-                const ex2 = parseSlipText(r2.data.text, currentLeague);
-                if (!ex.prop && ex2.prop) { ex.prop = ex2.prop; ex.league = ex2.league; }
-                if (!ex.player) ex.player = ex2.player;
-                if (ex.line == null) ex.line = ex2.line;
-                if (ex.odds == null) { ex.odds = ex2.odds; ex.oddsCount = ex2.oddsCount; }
-                if (!ex.opp) ex.opp = ex2.opp;
-                raw += `\n\n--- second pass (block mode) ---\n${r2.data.text}`;
+                raw += `\n--- second pass (block mode) ---\n${r2.data.text}`;
+                ex = parseSlipText(raw, currentLeague);
             }
             return { ex, raw, confidence: r1.data.confidence };
         }
@@ -863,7 +936,12 @@
             if (ex.player) { playerInput.value = ex.player; flashField(playerInput); }
             if (ex.opp) { oppInput.value = ex.opp; flashField(oppInput); }
             if (ex.line != null) { lineInput.value = ex.line; flashField(lineInput); }
-            if (ex.odds != null) { oddsInput.value = ex.odds; flashField(oddsInput); }
+            if (ex.odds != null) {
+                oddsInput.value = ex.odds;
+                underOddsInput.value = ex.underOdds != null ? ex.underOdds : ex.odds; // one price found -> mirror it
+                flashField(oddsInput);
+                flashField(underOddsInput);
+            }
             flashField(meanInput, 'amber');
             flashField(stdInput, 'amber');
             runSimulation();
@@ -874,9 +952,9 @@
             box.innerHTML = '';
             const rows = [
                 ['Player', ex.player],
-                ['Prop', ex.prop],
+                ['Prop', ex.prop ? ex.prop + (ex.propNote ? ` (${ex.propNote})` : '') : null],
                 ['Line', ex.line != null ? String(ex.line) : null],
-                ['Odds', ex.odds != null ? fmtOdds(ex.odds) + (ex.oddsCount > 1 ? ` (${ex.oddsCount} found)` : '') : null],
+                ['Odds', ex.odds != null ? `O ${fmtOdds(ex.odds)}` + (ex.underOdds != null ? ` / U ${fmtOdds(ex.underOdds)}` : '') : null],
                 ['Opponent', ex.opp],
                 ['League', ex.league]
             ];
@@ -910,7 +988,10 @@
             const notes = [];
             const missing = ['player', 'prop', 'line'].filter(k => !slip.ex[k] && slip.ex[k] !== 0);
             if (missing.length) notes.push(`Couldn't read: ${missing.join(', ')}. Fill those in manually (raw OCR text is below).`);
+            if (slip.ex.propNote === 'inferred') notes.push(`No prop label on this slip. Set Prop to Outs Recorded because a line of ${slip.ex.line} is typical for pitcher outs. Change it if that's wrong.`);
+            if (slip.ex.propNote === 'adjusted') notes.push(`The slip text matched Strikeouts, but a line of ${slip.ex.line} is far too high for strikeouts, so Prop was set to Outs Recorded.`);
             if (slip.ex.odds == null) notes.push(`No sportsbook odds found (common on PrizePicks/Underdog), so odds stay at ${fmtOdds(parseInt(oddsInput.value, 10) || -110)}.`);
+            else if (slip.ex.underOdds == null) notes.push('Only one price was found, so the Under uses the same price. Edit Under Odds if the slip shows a different one.');
             notes.push('Slips don\u2019t include your model inputs: Base Projection Mean and Std Dev were not changed. Set them for this player before trusting the EV.');
             setOcrNotes(notes);
         }
@@ -990,6 +1071,7 @@
             const stdDev = parseFloat(stdInput.value) || 0.5;
             const line = parseFloat(lineInput.value) || 0.0;
             const odds = parseInt(oddsInput.value) || -110;
+            const underOdds = parseInt(underOddsInput.value) || odds;
             const distType = distSelect.value;
 
             // Apply opponent multiplier factor
@@ -1028,10 +1110,12 @@
             const overProb = overWins / numSims;
             const underProb = underWins / numSims;
             const impliedProb = americanToImplied(odds);
+            const impliedUnder = americanToImplied(underOdds);
+            const noVigOver = impliedProb / (impliedProb + impliedUnder); // multiplicative de-vig
 
             // Calculate Expected Value (EV%) & Quarter Kelly
             const [evOver, kellyOver] = calculateEVAndKelly(overProb, odds);
-            const [evUnder, kellyUnder] = calculateEVAndKelly(underProb, odds);
+            const [evUnder, kellyUnder] = calculateEVAndKelly(underProb, underOdds);
 
             // Calculate Percentiles
             results.sort();
@@ -1050,7 +1134,7 @@
             document.getElementById('stat-under-ev').className = `text-[10px] mt-0.5 font-bold ${evUnder >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
 
             document.getElementById('stat-implied-prob').textContent = `${(impliedProb * 100).toFixed(1)}%`;
-            document.getElementById('stat-odds-display').textContent = `Odds: ${odds > 0 ? '+' : ''}${odds}`;
+            document.getElementById('stat-odds-display').textContent = `O ${odds > 0 ? '+' : ''}${odds} / U ${underOdds > 0 ? '+' : ''}${underOdds} · no-vig O ${(noVigOver * 100).toFixed(1)}%`;
 
             const bestKelly = Math.max(0, evOver > evUnder ? kellyOver : kellyUnder);
             document.getElementById('stat-kelly-stake').textContent = `${bestKelly.toFixed(2)}%`;
